@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: wenyiduo-recital-game
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -w packages/server
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATA_DIR
+        value: ./data
+      - key: WEB_ORIGIN
+        sync: false
+

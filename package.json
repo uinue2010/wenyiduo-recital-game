@@ -1,0 +1,20 @@
+{
+  "name": "wenyiduo-recital-game",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,yellow \"npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
+    "dev:server": "npm run dev -w packages/server",
+    "dev:web": "npm run dev -w packages/web",
+    "build": "npm run build -w packages/server && npm run build -w packages/web",
+    "start": "npm run start -w packages/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  }
+}
+
