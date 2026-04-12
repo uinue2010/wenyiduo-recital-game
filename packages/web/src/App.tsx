@@ -39,9 +39,6 @@ export default function App() {
 
   const completedCount = progress.filter((item) => item.pass).length;
   const selectedProgress = selectedLevel ? progressMap.get(selectedLevel.id) : undefined;
-  const selectedIndex = selectedLevel
-    ? (lesson?.levels.findIndex((item) => item.id === selectedLevel.id) ?? -1) + 1
-    : 0;
 
   useEffect(() => {
     if (!lesson || selectedLevelId) {
@@ -67,14 +64,14 @@ export default function App() {
       setGeminiEnabled(lessonResult.value.geminiEnabled);
     } else {
       console.error(lessonResult.reason);
-      setError("关卡加载失败，请稍后刷新页面再试。");
+      setError("关卡加载失败，请稍后刷新页面。");
     }
 
     if (historyResult.status === "fulfilled") {
       setHistory(historyResult.value.history);
     } else {
       console.error(historyResult.reason);
-      setWarning("历史记录暂时没有同步成功，但不影响当前闯关。");
+      setWarning("历史记录暂时未同步成功，但当前闯关仍可正常使用。");
     }
 
     setBusy(false);
@@ -94,7 +91,7 @@ export default function App() {
       });
     } catch (startError) {
       console.error(startError);
-      setError("录音启动失败，请确认浏览器麦克风权限已经允许。");
+      setError("录音启动失败，请检查浏览器麦克风权限。");
     } finally {
       setBusy(false);
     }
@@ -118,7 +115,6 @@ export default function App() {
         liveTranscript: result.transcript,
         durationMs: result.durationMs
       });
-
       setCurrentReport(response.attempt.report ?? null);
       setActiveAttempt(response.attempt);
       await loadData();
@@ -132,93 +128,72 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="ambient ambient-left" />
-      <div className="ambient ambient-right" />
-      <div className="paper-frame">
-        <header className="masthead">
-          <div className="masthead-copy">
-            <p className="kicker">八年级下册 · 闻一多专题闯关</p>
+      <div className="page">
+        <header className="hero">
+          <div className="hero-copy">
+            <p className="hero-caption">八年级下册 · 闻一多</p>
             <h1>最后一次讲演</h1>
-            <p className="deck">
-              按比赛评审逻辑即时打分，让学生在演讲气势、停连节奏与情感层次上逐关提升，
-              读完就知道自己哪里有力量，哪里还欠火候。
+            <p className="hero-summary">
+              围绕课文段落做逐关朗读。系统根据原始语音给出即时评分、文本准确度提示和更接近比赛评委口吻的专业点评。
             </p>
-            <div className="headline-strip">
-              <span>原始语音主评</span>
-              <span>实时转写辅助</span>
-              <span>专业评委口吻</span>
-            </div>
           </div>
 
-          <aside className="masthead-aside">
-            <div className="hero-stat-card">
-              <span>当前引擎</span>
-              <strong>{geminiEnabled ? "Gemini 语音评分" : "本地模拟评分"}</strong>
-            </div>
-            <div className="hero-stat-card">
-              <span>关卡进度</span>
-              <strong>
-                {completedCount}/{lesson?.levels.length ?? 0}
-              </strong>
-            </div>
-            <div className="hero-quote-card">
-              <p className="quote-mark">“</p>
-              <p>我们的光明，就在我们的前面。</p>
-              <span>课文收束句 · 适合作为整篇朗读的情感高点</span>
-            </div>
-          </aside>
+          <div className="hero-stats">
+            <StatCard label="当前引擎" value={geminiEnabled ? "Gemini 评分" : "本地模拟评分"} />
+            <StatCard
+              label="通关进度"
+              value={`${completedCount}/${lesson?.levels.length ?? 0}`}
+            />
+          </div>
         </header>
 
         {!geminiEnabled && (
-          <section className="message-bar">
-            当前服务端没有读到 `GEMINI_API_KEY`，会自动回退到本地模拟评分。
+          <section className="notice">
+            当前没有检测到 `GEMINI_API_KEY`，系统会自动使用本地模拟评分。
           </section>
         )}
+        {warning && <section className="notice notice-soft">{warning}</section>}
+        {error && <section className="notice notice-danger">{error}</section>}
+        {recorder.error && <section className="notice notice-danger">{recorder.error}</section>}
 
-        {warning && <section className="message-bar subtle">{warning}</section>}
-        {error && <section className="message-bar danger">{error}</section>}
-        {recorder.error && <section className="message-bar danger">{recorder.error}</section>}
-
-        <main className="editorial-grid">
-          <aside className="panel-surface rail-panel">
-            <div className="section-heading">
-              <p className="section-label">Stage Map</p>
-              <h2>关卡地图</h2>
-            </div>
-
-            <div className="rail-summary">
-              <span>从怒斥暗杀到宣告胜利，按情绪推进完成整篇训练。</span>
-              <button className="ghost-button" onClick={() => void loadData()} disabled={busy}>
+        <main className="layout">
+          <aside className="sidebar card">
+            <div className="block-head">
+              <div>
+                <p className="eyebrow">关卡</p>
+                <h2>课程章节</h2>
+              </div>
+              <button className="subtle-button" onClick={() => void loadData()} disabled={busy}>
                 刷新
               </button>
             </div>
 
-            <div className="rail-list">
+            <div className="level-list">
               {lesson?.levels.map((level, index) => {
                 const progressItem = progressMap.get(level.id);
-                const isSelected = selectedLevelId === level.id;
+                const selected = selectedLevelId === level.id;
                 return (
                   <button
                     key={level.id}
-                    className={`rail-card ${isSelected ? "selected" : ""}`}
+                    className={`level-item ${selected ? "selected" : ""}`}
                     onClick={() => setSelectedLevelId(level.id)}
                   >
-                    <div className="rail-card-top">
-                      <span className="rail-index">{String(index + 1).padStart(2, "0")}</span>
-                      <span className={`mode-pill ${level.mode}`}>
+                    <div className="level-item-top">
+                      <span className="level-order">{String(index + 1).padStart(2, "0")}</span>
+                      <span className={`mode-tag ${level.mode}`}>
                         {level.mode === "speech" ? "演讲" : "朗诵"}
                       </span>
                     </div>
                     <strong>{level.title}</strong>
                     <p>{level.focus}</p>
-                    <div className="rail-card-meta">
+                    <div className="level-item-meta">
                       <span>通关线 {level.passScore}</span>
-                      <span className={progressItem?.pass ? "state-pass" : "state-pending"}>
+                      <span className={progressItem?.pass ? "ok" : "muted"}>
                         {progressItem?.pass
-                          ? `已通关 ${progressItem.bestScore}`
+                          ? `最高 ${progressItem.bestScore}`
                           : progressItem
-                            ? `最高 ${progressItem.bestScore}`
-                            : "待挑战"}
+                            ? `已挑战 ${progressItem.bestScore}`
+                            : "未开始"}
                       </span>
                     </div>
                   </button>
@@ -227,56 +202,42 @@ export default function App() {
             </div>
           </aside>
 
-          <section className="content-column">
-            <section className="panel-surface stage-panel">
+          <section className="main-column">
+            <section className="card lesson-card">
               {selectedLevel ? (
                 <>
-                  <div className="section-heading stage-heading">
+                  <div className="block-head lesson-head">
                     <div>
-                      <p className="section-label">
-                        Chapter {String(selectedIndex).padStart(2, "0")}
+                      <p className="eyebrow">
+                        {selectedLevel.mode === "speech" ? "演讲评分关" : "朗诵评分关"}
                       </p>
                       <h2>{selectedLevel.title}</h2>
                     </div>
-
-                    <div className="stage-heading-meta">
-                      <span className={`mode-pill ${selectedLevel.mode}`}>
-                        {selectedLevel.mode === "speech" ? "演讲评分关" : "朗诵评分关"}
-                      </span>
-                      <span className="quiet-meta">
-                        {selectedProgress?.pass
-                          ? `本关最高 ${selectedProgress.bestScore}`
-                          : "本关尚未通关"}
-                      </span>
+                    <div className="lesson-status">
+                      <span>{selectedProgress?.pass ? `本关最高 ${selectedProgress.bestScore}` : "本关尚未通关"}</span>
                     </div>
                   </div>
 
-                  <div className="stage-grid">
-                    <article className="passage-sheet">
-                      <div className="sheet-topline">
+                  <div className="lesson-grid">
+                    <article className="reading-card">
+                      <div className="reading-meta">
                         <span>本关文本</span>
-                        <span>重点看气势、层次和准确度</span>
+                        <span>建议先默读一遍再开始</span>
                       </div>
                       <blockquote>{selectedLevel.paragraph}</blockquote>
-                      <div className="annotation-grid">
-                        <div>
-                          <span>评分重点</span>
-                          <p>{selectedLevel.focus}</p>
-                        </div>
-                        <div>
-                          <span>示范提示</span>
-                          <p>{selectedLevel.promptHint}</p>
-                        </div>
-                        <div>
-                          <span>教练提醒</span>
-                          <p>{selectedLevel.coachingTip}</p>
-                        </div>
+                      <div className="notes-grid">
+                        <NoteItem title="评分重点" value={selectedLevel.focus} />
+                        <NoteItem title="示范提示" value={selectedLevel.promptHint} />
+                        <NoteItem title="教练提醒" value={selectedLevel.coachingTip} />
                       </div>
                     </article>
 
-                    <aside className="command-panel">
-                      <div className="command-head">
-                        <p className="section-label">Live Booth</p>
+                    <aside className="record-card">
+                      <div className="record-actions">
+                        <div>
+                          <p className="eyebrow">录音控制</p>
+                          <h3>开始朗读</h3>
+                        </div>
                         {!recorder.isRecording ? (
                           <button
                             className="primary-button"
@@ -296,31 +257,31 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="command-stats">
-                        <MetricCard label="录音状态" value={recorder.statusText} />
-                        <MetricCard label="已录时长" value={formatDuration(recorder.elapsedMs)} />
-                        <MetricCard
+                      <div className="record-metrics">
+                        <StatLine label="录音状态" value={recorder.statusText} />
+                        <StatLine label="已录时长" value={formatDuration(recorder.elapsedMs)} />
+                        <StatLine
                           label="当前阶段"
                           value={recorder.isRecording ? "正在聆听" : "等待开始"}
                         />
                       </div>
 
-                      <div className="transcript-panel">
-                        <div className="sheet-topline">
+                      <div className="transcript-card">
+                        <div className="reading-meta">
                           <span>即时转写</span>
-                          <span>Gemini Live 辅助对齐</span>
+                          <span>用于辅助对齐文本</span>
                         </div>
                         <p>
                           {recorder.transcript ||
-                            "开始录音后，这里会同步出现即时转写，用来辅助判断是否漏读、跳句或气口混乱。"}
+                            "开始录音后，这里会显示 Gemini Live 的即时转写结果。"}
                         </p>
                       </div>
                     </aside>
                   </div>
 
-                  <div className="rubric-row">
+                  <div className="rubric-grid">
                     {selectedLevel.rubric.map((item) => (
-                      <div key={item.name} className="rubric-tile">
+                      <div key={item.name} className="rubric-card">
                         <span>{item.name}</span>
                         <strong>{item.maxScore} 分</strong>
                       </div>
@@ -332,47 +293,49 @@ export default function App() {
               )}
             </section>
 
-            <section className="panel-surface critique-panel">
-              <div className="section-heading">
-                <p className="section-label">Judging Notes</p>
-                <h2>即时点评</h2>
+            <section className="card result-card">
+              <div className="block-head">
+                <div>
+                  <p className="eyebrow">点评</p>
+                  <h2>即时结果</h2>
+                </div>
               </div>
               {currentReport ? (
                 <ReportView report={currentReport} />
               ) : (
-                <div className="empty-state report-empty">
-                  完成一次闯关后，这里会按朗诵比赛评委口吻返回总评、维度分、亮点、改进建议和复练指令。
+                <div className="empty-state">
+                  完成一次闯关后，这里会显示总分、维度分、亮点、改进建议和复练指令。
                 </div>
               )}
             </section>
           </section>
 
-          <section className="panel-surface archive-panel">
-            <div className="section-heading archive-heading">
+          <section className="card history-card">
+            <div className="block-head">
               <div>
-                <p className="section-label">Archive</p>
-                <h2>本机历史</h2>
+                <p className="eyebrow">历史记录</p>
+                <h2>本机存档</h2>
               </div>
-              <span className="quiet-meta">保留每次闯关记录与录音回放</span>
+              <span className="history-hint">保留每次闯关记录与录音回放</span>
             </div>
 
-            <div className="history-timeline">
+            <div className="history-list">
               {history.length === 0 && <div className="empty-state">还没有历史记录。</div>}
               {history.map((row) => (
-                <article key={row.attempt.id} className="history-item">
-                  <div className="history-timestamp">{formatTimestamp(row.attempt.createdAt)}</div>
-                  <div className="history-body">
-                    <div className="history-headline">
+                <article key={row.attempt.id} className="history-entry">
+                  <div className="history-time">{formatTimestamp(row.attempt.createdAt)}</div>
+                  <div className="history-content">
+                    <div className="history-top">
                       <strong>
                         {lesson?.levels.find((item) => item.id === row.attempt.levelId)?.title ??
                           row.attempt.levelId}
                       </strong>
-                      <span className="history-score">
+                      <span className="history-badge">
                         {row.attempt.report
                           ? `${row.attempt.report.totalScore} 分 · ${verdictLabel(
                               row.attempt.report.verdict
                             )}`
-                          : "录音中断或尚未评分"}
+                          : "未评分"}
                       </span>
                     </div>
                     {row.attempt.report?.summary && (
@@ -400,9 +363,27 @@ export default function App() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="metric-card">
+    <div className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function NoteItem({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="note-item">
+      <span>{title}</span>
+      <p>{value}</p>
+    </div>
+  );
+}
+
+function StatLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="stat-line">
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -412,32 +393,31 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 function ReportView({ report }: { report: ScoreReport }) {
   return (
     <div className="report-shell">
-      <div className="report-banner">
-        <div className={`score-orb ${report.verdict}`}>
+      <div className="report-header">
+        <div className={`score-panel ${report.verdict}`}>
           <span>总分</span>
           <strong>{report.totalScore}</strong>
         </div>
-
-        <div className="report-intro">
+        <div className="report-main">
           <div className="report-topline">
             <span>{verdictLabel(report.verdict)}</span>
             <span>{report.engine === "gemini" ? "Gemini 专业评分" : "本地模拟评分"}</span>
           </div>
           <p className="report-summary">{report.summary}</p>
-          <p className="report-note">
+          <p className="report-subtitle">
             {report.pass
-              ? "本关已达通关线，可以继续向下一关推进。"
+              ? "本关已经达到通关要求，可以继续挑战下一关。"
               : report.verdict === "near_pass"
-                ? "已经接近通关，建议按点评中的重点句再复练一遍。"
-                : "建议先留在当前关，重点补足重音、停顿和文本完整度。"}
+                ? "已经接近通关，建议按重点句再复练一次。"
+                : "建议先留在当前关，把重音、停顿和文本完整度补齐。"}
           </p>
         </div>
       </div>
 
-      <div className="dimension-board">
+      <div className="dimension-grid">
         {report.dimensions.map((dimension) => (
-          <div key={dimension.name} className="dimension-tile">
-            <div className="dimension-tile-head">
+          <div key={dimension.name} className="dimension-card">
+            <div className="dimension-top">
               <span>{dimension.name}</span>
               <strong>
                 {dimension.score}/{dimension.maxScore}
@@ -450,22 +430,15 @@ function ReportView({ report }: { report: ScoreReport }) {
 
       <div className="insight-grid">
         <section className="insight-card">
-          <div className="sheet-topline">
-            <span>亮点</span>
-            <span>值得保留的表达</span>
-          </div>
+          <h3>亮点</h3>
           <ul>
             {report.strengths.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         </section>
-
-        <section className="insight-card warning-card">
-          <div className="sheet-topline">
-            <span>改进建议</span>
-            <span>下一次要刻意修正</span>
-          </div>
+        <section className="insight-card">
+          <h3>改进建议</h3>
           <ul>
             {report.improvements.map((item) => (
               <li key={item}>{item}</li>
@@ -474,14 +447,11 @@ function ReportView({ report }: { report: ScoreReport }) {
         </section>
       </div>
 
-      <section className="feedback-panel">
-        <div className="sheet-topline">
-          <span>逐句指导</span>
-          <span>按比赛点评方式给出纠偏</span>
-        </div>
+      <section className="feedback-section">
+        <h3>逐句指导</h3>
         <div className="feedback-grid">
           {report.lineFeedback.map((item) => (
-            <div key={`${item.label}-${item.advice}`} className="feedback-note">
+            <div key={`${item.label}-${item.advice}`} className="feedback-card">
               <strong>{item.label}</strong>
               <p>{item.advice}</p>
             </div>
@@ -489,8 +459,8 @@ function ReportView({ report }: { report: ScoreReport }) {
         </div>
       </section>
 
-      <section className="practice-banner">
-        <p className="section-label">Practice Cue</p>
+      <section className="practice-card">
+        <h3>复练指令</h3>
         <p>{report.practiceTip}</p>
         {report.accuracyNotes && <span>{report.accuracyNotes}</span>}
       </section>
