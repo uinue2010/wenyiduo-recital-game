@@ -6,7 +6,7 @@ import type {
   ProgressRecord
 } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const NORMALIZED_API_BASE = API_BASE === "/" ? "" : API_BASE;
 
 export async function fetchLesson() {
