@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { createAttempt, fetchHistory, fetchLesson, uploadAttemptAudio } from "./api";
 import { useRecorder } from "./useRecorder";
 import type {
@@ -15,6 +16,7 @@ const PUBLIC_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export default function App() {
   const recorder = useRecorder();
   const lastSpokenSummaryRef = useRef("");
+  const speechRetryTimerRef = useRef<number | null>(null);
   const [lesson, setLesson] = useState<LessonConfig | null>(null);
   const [progress, setProgress] = useState<ProgressRecord[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -33,6 +35,7 @@ export default function App() {
   useEffect(() => {
     return () => {
       window.speechSynthesis?.cancel();
+      clearSpeechRetryTimer(speechRetryTimerRef);
     };
   }, []);
 
@@ -63,7 +66,7 @@ export default function App() {
       return;
     }
     lastSpokenSummaryRef.current = currentReport.summary;
-    speakSummary(currentReport.summary);
+    autoSpeakSummary(currentReport.summary, speechRetryTimerRef);
   }, [currentReport]);
 
   async function loadData() {
@@ -135,6 +138,10 @@ export default function App() {
         liveTranscript: result.transcript,
         durationMs: result.durationMs
       });
+      if (response.attempt.report?.summary) {
+        lastSpokenSummaryRef.current = response.attempt.report.summary;
+        autoSpeakSummary(response.attempt.report.summary, speechRetryTimerRef);
+      }
       setCurrentReport(response.attempt.report ?? null);
       setActiveAttempt(response.attempt);
       await loadData();
@@ -448,35 +455,51 @@ function ReportView({ report }: { report: ScoreReport }) {
         <div className="teacher-note">
           <div className="teacher-note-top">
             <span>{verdictLabel(report.verdict)}</span>
-            <span>{report.pass ? "已生成语音总评" : "请听语音总评"}</span>
+            <span>{report.pass ? "评分完成后自动播报" : "总评已自动播报"}</span>
           </div>
-          <p className="voice-note">点评已压缩为 150 字以内的总评，并以语音方式播报。</p>
-          <button className="voice-button" onClick={() => speakSummary(report.summary)}>
-            播放语音总评
-          </button>
+          <p className="voice-note">点评已压缩为 150 字以内的总评，分数出现后会直接自动播放。</p>
         </div>
       </div>
     </div>
   );
 }
 
+function autoSpeakSummary(text: string, retryTimerRef: MutableRefObject<number | null>) {
+  clearSpeechRetryTimer(retryTimerRef);
+  const hasStarted = speakSummary(text);
+
+  retryTimerRef.current = window.setTimeout(() => {
+    if (!hasStarted()) {
+      speakSummary(text);
+    }
+    clearSpeechRetryTimer(retryTimerRef);
+  }, 900);
+}
+
 function speakSummary(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-    return;
+    return () => false;
   }
 
   const summary = text.trim();
   if (!summary) {
-    return;
+    return () => false;
   }
 
   const synth = window.speechSynthesis;
   synth.cancel();
+  synth.resume();
+  synth.getVoices();
+  let started = false;
+
   const utterance = new SpeechSynthesisUtterance(summary);
   utterance.lang = "zh-CN";
   utterance.rate = 1;
   utterance.pitch = 1;
   utterance.volume = 1;
+  utterance.onstart = () => {
+    started = true;
+  };
 
   const chineseVoice =
     synth
@@ -488,6 +511,14 @@ function speakSummary(text: string) {
   }
 
   synth.speak(utterance);
+  return () => started;
+}
+
+function clearSpeechRetryTimer(timerRef: MutableRefObject<number | null>) {
+  if (timerRef.current != null) {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
 }
 
 function verdictLabel(verdict: ScoreReport["verdict"]) {
