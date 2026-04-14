@@ -126,10 +126,10 @@ export class GeminiService {
         totalScore,
         summary:
           totalScore >= input.level.passScore
-            ? "这一遍整体完成度已经过关，语势和节奏比较稳，继续保持这种完整表达。"
+            ? "这一遍整体完成度已经过关，文本基本顺畅，语势也能立住，关键判断句有一定分量。后面如果把停顿收得更整、句尾收音再稳一点，整段表达会更像比赛里的成熟呈现，现场感还能再往上提。"
             : totalScore >= 70
-              ? "这一遍已经接近通关，气势有了，但重音和停顿还要更利落，下一遍会更稳。"
-              : "这一遍基础已具备，但文本准确度和语气控制还不够稳定，先把整段读顺再加强情感。",   
+              ? "这一遍已经接近通关，整体气势出来了，段落也能基本撑住，但重音落点和停顿处理还不够整齐，个别句子收得有些急。下一遍如果把关键词再压实一点，把语意群读得更连贯，分数会更稳定地往上走。"
+              : "这一遍已经把基本框架读出来了，但文本准确度、语气控制和节奏完整性还不够稳，听起来会有些散。建议下一遍先把原文再顺一遍，按语意群处理停顿，再把重点词读得更鲜明，这样整体完成度会明显提高。",
         transcript,
       },
       input.level.mode,
@@ -175,9 +175,10 @@ function buildScoringPrompt(
     "输出要求：",
     "1. 评分必须符合各维度分值上限，总分为各维度之和。",
     "2. summary 只能输出一段中文总评，不要分点，不要拆成亮点和建议。",
-    "3. summary 必须控制在 150 个汉字以内，语气像比赛评委，但要简洁克制。",
-    "4. summary 只说整体判断，不要逐句展开，不要写维度拆解。",
-    "5. 如果存在明显问题，只在这句总评里简要点到为止。"
+    "3. summary 目标长度为 150 字左右，尽量控制在 130 到 170 个汉字之间，不要过短。",
+    "4. 可以用 2 到 3 个短句组成一段完整总评，但仍然只输出这一段，不要列条目。",
+    "5. summary 只说整体判断，不要逐句展开，不要写维度拆解。",
+    "6. 如果存在明显问题，只在这段总评里简要点到为止。"
   ]
     .filter(Boolean)
     .join("\n");
@@ -224,29 +225,87 @@ function sanitizeReport(
     totalScore,
     pass,
     mode,
-    summary: normalizeSummary(report.summary),
+    summary: normalizeSummary(report.summary, totalScore, mode),
     transcript: report.transcript,
     verdict,
     engine
   };
 }
 
-function normalizeSummary(summary?: string) {
+function normalizeSummary(summary: string | undefined, totalScore: number, mode: LevelMode) {
   const text = (summary ?? "")
     .replace(/\s+/g, " ")
     .replace(/[：:]\s*/g, "，")
     .trim();
   if (!text) {
-    return "这一遍已经完成，请继续保持整段表达的完整性和稳定度。";
+    return buildFallbackSummary(totalScore, mode);
   }
 
-  const firstSentence =
-    text.split(/(?<=[。！？!?])/u).find((item) => item.trim())?.trim() ?? text;
-  const clipped = Array.from(firstSentence).slice(0, 150).join("").trim();
-  if (/[。！？!?]$/u.test(clipped)) {
-    return clipped;
+  const sentenceParts = text
+    .split(/(?<=[。！？!?])/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  let combined = "";
+  for (const part of sentenceParts) {
+    const candidate = `${combined}${part}`.trim();
+    if (Array.from(candidate).length > 170) {
+      break;
+    }
+    combined = candidate;
+    if (Array.from(combined).length >= 130) {
+      break;
+    }
   }
-  return `${clipped}。`;
+
+  const base = combined || text;
+  const clipped = Array.from(base).slice(0, 170).join("").trim();
+  const completed = /[。！？!?]$/u.test(clipped) ? clipped : `${clipped}。`;
+
+  if (Array.from(completed).length >= 120) {
+    return completed;
+  }
+
+  const fallbackTail = buildFallbackTail(totalScore, mode);
+  const extended = `${completed}${fallbackTail}`;
+  const finalText = Array.from(extended).slice(0, 170).join("").trim();
+  return /[。！？!?]$/u.test(finalText) ? finalText : `${finalText}。`;
+}
+
+function buildFallbackSummary(totalScore: number, mode: LevelMode) {
+  if (totalScore >= 85) {
+    return mode === "speech"
+      ? "这一遍整体表达已经比较完整，语势能立住，关键句也有一定力度，能让人听出你的态度和立场。后面如果把停顿收得更整、重音放得更准一些，整段讲演会更有现场感染力，比赛感也会更明显。"
+      : "这一遍整体朗读已经比较完整，文本推进顺畅，情感方向也是对的，听起来有一定层次和起伏。接下来如果把字音再咬实一点，把句间停连处理得更自然，整段作品会更有沉浸感，也更接近比赛里的成熟呈现。";
+  }
+
+  if (totalScore >= 70) {
+    return mode === "speech"
+      ? "这一遍已经接近通关，整体气势有了，段落也能基本撑住，但重音落点和语句停顿还不够整，听感上还差一点凝聚力。下一遍只要把关键词再压实，把句与句之间带得更顺，分数就会明显更稳。"
+      : "这一遍已经接近通关，整体节奏和情感方向都出来了，但有些地方转折还不够清楚，句尾收得也略急，所以听起来还差一点完整度。下一遍把停连再理顺，把重点词读得更鲜明一些，整体效果会立刻提升。";
+  }
+
+  return mode === "speech"
+    ? "这一遍已经把基本框架读出来了，但文本准确度、语气控制和节奏完整性还不够稳定，所以整体力量感还没有真正立起来。建议先把原文再顺一遍，按语意群处理停顿，再把关键判断句读得更坚决一些，进步会非常明显。"
+    : "这一遍已经有了基本朗读状态，但文本熟练度、吐字清晰度和节奏连贯性还不够稳定，所以整段听起来会稍微有些散。建议先把原文读顺读熟，再把重点句的气口和重音找准，整体表现会比现在完整很多。";
+}
+
+function buildFallbackTail(totalScore: number, mode: LevelMode) {
+  if (totalScore >= 85) {
+    return mode === "speech"
+      ? "后面再把停顿和重音压得更准一些，整段现场感会更强。"
+      : "后面再把吐字和停连处理得更细一点，作品感会更足。";
+  }
+
+  if (totalScore >= 70) {
+    return mode === "speech"
+      ? "下一遍把关键词压实、停顿收整，整体力量会更集中。"
+      : "下一遍把层次和句尾收音理顺，整体完成度会更高。";
+  }
+
+  return mode === "speech"
+    ? "先把整段读顺，再去加强重音和语势，效果会更明显。"
+    : "先把文本读熟读稳，再去处理情感层次，提升会更快。";
 }
 
 function normalizeText(text: string) {
