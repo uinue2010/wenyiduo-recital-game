@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createAttempt, fetchHistory, fetchLesson, uploadAttemptAudio } from "./api";
 import { useRecorder } from "./useRecorder";
 import type {
@@ -14,6 +14,7 @@ const PUBLIC_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export default function App() {
   const recorder = useRecorder();
+  const lastSpokenSummaryRef = useRef("");
   const [lesson, setLesson] = useState<LessonConfig | null>(null);
   const [progress, setProgress] = useState<ProgressRecord[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -27,6 +28,12 @@ export default function App() {
 
   useEffect(() => {
     void loadData();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+    };
   }, []);
 
   const selectedLevel = useMemo(() => {
@@ -47,6 +54,17 @@ export default function App() {
     const firstPending = lesson.levels.find((item) => !progressMap.get(item.id)?.pass);
     setSelectedLevelId(firstPending?.id ?? lesson.levels[0]?.id ?? null);
   }, [lesson, progressMap, selectedLevelId]);
+
+  useEffect(() => {
+    if (!currentReport?.summary) {
+      return;
+    }
+    if (lastSpokenSummaryRef.current === currentReport.summary) {
+      return;
+    }
+    lastSpokenSummaryRef.current = currentReport.summary;
+    speakSummary(currentReport.summary);
+  }, [currentReport]);
 
   async function loadData() {
     setBusy(true);
@@ -82,6 +100,8 @@ export default function App() {
       setBusy(true);
       setError(null);
       setCurrentReport(null);
+      lastSpokenSummaryRef.current = "";
+      window.speechSynthesis?.cancel();
       recorder.reset();
       const response = await createAttempt(level.id, level.mode);
       setActiveAttempt(response.attempt);
@@ -137,7 +157,7 @@ export default function App() {
             <h1>{lesson?.title ?? "最后一次讲演"}</h1>
             <p className="lede">
               {lesson?.intro ??
-                "围绕课文段落逐关朗读，完成演讲与朗诵两类训练，读完即可得到即时评分与建设性点评。"}
+                "围绕课文段落逐关朗读，完成演讲与朗诵两类训练，读完即可听到简短语音总评。"}
             </p>
           </div>
 
@@ -323,7 +343,7 @@ export default function App() {
                     <ReportView report={currentReport} />
                   ) : (
                     <div className="placeholder-copy">
-                      完成一次朗读后，这里会按照比赛评委的口吻给出总评、维度分和复练建议。
+                      完成一次朗读后，这里只会播放一段简短语音总评，不再展开长篇文字点评。
                     </div>
                   )}
                 </section>
@@ -361,9 +381,6 @@ export default function App() {
                                 : "未完成"}
                             </span>
                           </div>
-                          {row.attempt.report?.summary && (
-                            <p className="history-summary">{row.attempt.report.summary}</p>
-                          )}
                           {row.attempt.audioPath && (
                             <audio
                               controls
@@ -431,72 +448,46 @@ function ReportView({ report }: { report: ScoreReport }) {
         <div className="teacher-note">
           <div className="teacher-note-top">
             <span>{verdictLabel(report.verdict)}</span>
-            <span>{report.pass ? "可以进入下一关" : "建议先复练本关"}</span>
+            <span>{report.pass ? "已生成语音总评" : "请听语音总评"}</span>
           </div>
-          <p className="teacher-summary">{report.summary}</p>
-          <p className="teacher-subcopy">
-            {report.pass
-              ? "整体完成度已经过关，下一次练习可以把节奏处理得更从容一些。"
-              : report.verdict === "near_pass"
-                ? "已经接近通关线，建议回到重点句，补齐停顿和重音的稳定性。"
-                : "先把文本准确度和气息完整度稳住，再逐步加强情感表达。"}
-          </p>
+          <p className="voice-note">点评已压缩为 150 字以内的总评，并以语音方式播报。</p>
+          <button className="voice-button" onClick={() => speakSummary(report.summary)}>
+            播放语音总评
+          </button>
         </div>
       </div>
-
-      <div className="dimension-list">
-        {report.dimensions.map((dimension) => (
-          <div key={dimension.name} className="dimension-row">
-            <div>
-              <span>{dimension.name}</span>
-              <p>{dimension.comment}</p>
-            </div>
-            <strong>
-              {dimension.score}/{dimension.maxScore}
-            </strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="insight-columns">
-        <section className="insight-panel">
-          <h3>这一遍的亮点</h3>
-          <ul>
-            {report.strengths.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="insight-panel">
-          <h3>下一遍优先改进</h3>
-          <ul>
-            {report.improvements.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-      </div>
-
-      <section className="feedback-panel">
-        <h3>逐句提醒</h3>
-        <div className="feedback-list">
-          {report.lineFeedback.map((item) => (
-            <article key={`${item.label}-${item.advice}`} className="feedback-row">
-              <strong>{item.label}</strong>
-              <p>{item.advice}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="practice-note">
-        <h3>复练指令</h3>
-        <p>{report.practiceTip}</p>
-        {report.accuracyNotes && <span>{report.accuracyNotes}</span>}
-      </section>
     </div>
   );
+}
+
+function speakSummary(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return;
+  }
+
+  const summary = text.trim();
+  if (!summary) {
+    return;
+  }
+
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(summary);
+  utterance.lang = "zh-CN";
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  const chineseVoice =
+    synth
+      .getVoices()
+      .find((voice) => voice.lang.toLowerCase().includes("zh") || /xiaoxiao|yunxi|xiaoyi/i.test(voice.name)) ??
+    null;
+  if (chineseVoice) {
+    utterance.voice = chineseVoice;
+  }
+
+  synth.speak(utterance);
 }
 
 function verdictLabel(verdict: ScoreReport["verdict"]) {

@@ -45,13 +45,7 @@ export interface ScoreReport {
   pass: boolean;
   mode: LevelMode;
   summary: string;
-  dimensions: ScoreDimension[];
-  strengths: string[];
-  improvements: string[];
-  lineFeedback: TimedFeedbackItem[];
-  practiceTip: string;
   transcript?: string;
-  accuracyNotes?: string;
   verdict: "pass" | "near_pass" | "retry";
   engine: "gemini" | "mock";
 }
@@ -83,4 +77,3 @@ export interface HistoryRow {
   attempt: AttemptRecord;
   progress?: ProgressRecord;
 }
-

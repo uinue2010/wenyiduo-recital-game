@@ -507,6 +507,26 @@ button:disabled {
   line-height: 1.9;
 }
 
+.voice-note {
+  margin: 14px 0 0;
+  color: var(--text-soft);
+  line-height: 1.8;
+}
+
+.voice-button {
+  margin-top: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 11px 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.voice-button:hover {
+  box-shadow: var(--shadow-soft);
+}
+
 .teacher-subcopy,
 .practice-note p,
 .feedback-row p,

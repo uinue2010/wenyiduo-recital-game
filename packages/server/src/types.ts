@@ -1,30 +1,11 @@
 export type LevelMode = "speech" | "recital";
 
-export interface ScoreDimension {
-  name: string;
-  maxScore: number;
-  score: number;
-  comment: string;
-}
-
-export interface TimedFeedbackItem {
-  label: string;
-  advice: string;
-  timeSeconds?: number;
-}
-
 export interface ScoreReport {
   totalScore: number;
   pass: boolean;
   mode: LevelMode;
   summary: string;
-  dimensions: ScoreDimension[];
-  strengths: string[];
-  improvements: string[];
-  lineFeedback: TimedFeedbackItem[];
-  practiceTip: string;
   transcript?: string;
-  accuracyNotes?: string;
   verdict: "pass" | "near_pass" | "retry";
   engine: "gemini" | "mock";
 }
@@ -72,4 +53,3 @@ export interface ProgressRecord {
   bestAttemptId?: string;
   updatedAt: string;
 }
-

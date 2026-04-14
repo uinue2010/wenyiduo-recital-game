@@ -2,19 +2,19 @@ import { readFileSync } from "node:fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import { lessonConfig } from "./lesson.js";
 import { estimateAudioMetrics } from "./audio.js";
-import type {
-  LevelConfig,
-  LevelMode,
-  ScoreReport,
-  ScoreDimension,
-  TimedFeedbackItem
-} from "./types.js";
+import type { LevelConfig, LevelMode, ScoreReport } from "./types.js";
 
 interface EvaluateInput {
   level: LevelConfig;
   audioPath: string;
   liveTranscript?: string;
   transcriptHint?: string;
+}
+
+interface RawScoreReport {
+  totalScore?: number;
+  summary?: string;
+  transcript?: string;
 }
 
 export class GeminiService {
@@ -73,63 +73,16 @@ export class GeminiService {
             type: Type.OBJECT,
             properties: {
               totalScore: { type: Type.NUMBER },
-              pass: { type: Type.BOOLEAN },
-              mode: { type: Type.STRING, enum: ["speech", "recital"] },
               summary: { type: Type.STRING },
-              dimensions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    maxScore: { type: Type.NUMBER },
-                    score: { type: Type.NUMBER },
-                    comment: { type: Type.STRING }
-                  },
-                  required: ["name", "maxScore", "score", "comment"]
-                }
-              },
-              strengths: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              improvements: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              lineFeedback: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    label: { type: Type.STRING },
-                    advice: { type: Type.STRING },
-                    timeSeconds: { type: Type.NUMBER }
-                  },
-                  required: ["label", "advice"]
-                }
-              },
-              practiceTip: { type: Type.STRING },
-              transcript: { type: Type.STRING },
-              accuracyNotes: { type: Type.STRING }
+              transcript: { type: Type.STRING }
             },
-            required: [
-              "totalScore",
-              "pass",
-              "mode",
-              "summary",
-              "dimensions",
-              "strengths",
-              "improvements",
-              "lineFeedback",
-              "practiceTip"
-            ]
+            required: ["totalScore", "summary"]
           }
         }
       });
 
       const rawText = response.text ?? "{}";
-      const parsed = JSON.parse(rawText) as Omit<ScoreReport, "verdict" | "engine">;
+      const parsed = JSON.parse(rawText) as RawScoreReport;
       return sanitizeReport(parsed, input.level.mode, "gemini");
     } catch (error) {
       console.error("Gemini scoring failed, falling back to mock evaluation.", error);
@@ -160,73 +113,24 @@ export class GeminiService {
         ? clamp(Math.round(metrics.peak * 18), 10, 20)
         : clamp(Math.round(metrics.peak * 14 + (1 - metrics.silenceRatio) * 8), 8, 18);
 
-    const dimensions = buildMockDimensions(
+    const totalScore = calculateMockTotal(
       input.level.mode,
       accuracyScore,
       audioEnergyScore,
       pacingScore,
       emotionBonus
     );
-    const totalScore = dimensions.reduce((sum, item) => sum + item.score, 0);
-
-    const improvements = [];
-    if (accuracyRatio < 0.9) {
-      improvements.push("文本存在漏读或替换词，建议对照原文逐句精读后再挑战。");
-    }
-    if (metrics.rms < 0.05) {
-      improvements.push("整体声音偏轻，关键句应再向前推出，增强现场感染力。");
-    }
-    if (metrics.silenceRatio > 0.65) {
-      improvements.push("停顿略碎，建议先划分语意群，再按整句推进。");
-    }
-    while (improvements.length < 2) {
-      improvements.push("重音词还可以更突出，尤其是立场鲜明的判断句。");
-    }
-
-    const strengths = [];
-    if (metrics.peak > 0.2) {
-      strengths.push("情绪起点比较鲜明，关键句有一定冲击力。");
-    }
-    if (accuracyRatio >= 0.9) {
-      strengths.push("文本熟练度较好，主要句群基本保持完整。");
-    }
-    while (strengths.length < 2) {
-      strengths.push("整体节奏尚稳，能够完成一段完整表达。");
-    }
 
     return sanitizeReport(
       {
         totalScore,
-        pass: totalScore >= input.level.passScore,
-        mode: input.level.mode,
         summary:
           totalScore >= input.level.passScore
-            ? "这一段已经有比赛朗读的雏形，气势和文本控制基本到位。"
+            ? "这一遍整体完成度已经过关，语势和节奏比较稳，继续保持这种完整表达。"
             : totalScore >= 70
-              ? "这一段完成度不错，但离通关还差一点临门一脚。"
-              : "这一段的基础已经有了，接下来重点补强重音、节奏和文本准确度。",
-        dimensions,
-        strengths,
-        improvements,
-        lineFeedback: [
-          {
-            label: "开头起势",
-            advice:
-              input.level.mode === "speech"
-                ? "第一句再果断一些，像当众发问而不是平读叙述。"
-                : "第一句先稳后扬，把气口和重音先铺出来。"
-          },
-          {
-            label: "关键判断句",
-            advice: "遇到“无耻”“光荣”“胜利”等词时，要敢于拉开轻重。 "
-          }
-        ],
-        practiceTip: "下次练习先做一遍慢速划重音，再按比赛速度完整读一遍。",
+              ? "这一遍已经接近通关，气势有了，但重音和停顿还要更利落，下一遍会更稳。"
+              : "这一遍基础已具备，但文本准确度和语气控制还不够稳定，先把整段读顺再加强情感。",   
         transcript,
-        accuracyNotes:
-          accuracyRatio >= 0.9
-            ? "文本准确度较好。"
-            : "检测到可能存在漏读、替换词或停顿导致的识别偏差。"
       },
       input.level.mode,
       "mock"
@@ -270,141 +174,79 @@ function buildScoringPrompt(
     `评分维度：${rubric.join("；")}`,
     "输出要求：",
     "1. 评分必须符合各维度分值上限，总分为各维度之和。",
-    "2. 点评语气要像比赛评委，专业、具体、有建设性。",
-    "3. strengths 至少 2 条，improvements 至少 2 条，lineFeedback 至少 2 条。",
-    "4. lineFeedback 可以按句子片段或时间点给建议。",
-    "5. 如果存在错漏字、停顿问题或情绪不到位，请明确指出。",
-    "6. summary 用 1 句总评，practiceTip 用 1 条下一次复练指令。"
+    "2. summary 只能输出一段中文总评，不要分点，不要拆成亮点和建议。",
+    "3. summary 必须控制在 150 个汉字以内，语气像比赛评委，但要简洁克制。",
+    "4. summary 只说整体判断，不要逐句展开，不要写维度拆解。",
+    "5. 如果存在明显问题，只在这句总评里简要点到为止。"
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function buildMockDimensions(
+function calculateMockTotal(
   mode: LevelMode,
   accuracyScore: number,
   audioEnergyScore: number,
   pacingScore: number,
   emotionBonus: number
-): ScoreDimension[] {
+): number {
   if (mode === "speech") {
-    return [
-      {
-        name: "文本准确度",
-        maxScore: 20,
-        score: accuracyScore,
-        comment: accuracyScore >= 16 ? "文本基本准确。" : "存在漏读或替换词。"
-      },
-      {
-        name: "语气重音",
-        maxScore: 20,
-        score: clamp(audioEnergyScore, 8, 20),
-        comment: "关键词可再压重，反问句更要推出锋芒。"
-      },
-      {
-        name: "停连节奏",
-        maxScore: 15,
-        score: clamp(Math.round(pacingScore * 0.8), 6, 15),
-        comment: "句间可再拉开层次，避免碎停顿。"
-      },
-      {
-        name: "情感与感染力",
-        maxScore: 25,
-        score: clamp(emotionBonus + 5, 10, 25),
-        comment: "情绪方向对了，但情感峰值还可以更集中。"
-      },
-      {
-        name: "整体台风/气势",
-        maxScore: 20,
-        score: clamp(audioEnergyScore + 2, 8, 20),
-        comment: "整体表达完整，若更果断会更有现场感。"
-      }
-    ];
+    return (
+      accuracyScore +
+      clamp(audioEnergyScore, 8, 20) +
+      clamp(Math.round(pacingScore * 0.8), 6, 15) +
+      clamp(emotionBonus + 5, 10, 25) +
+      clamp(audioEnergyScore + 2, 8, 20)
+    );
   }
 
-  return [
-    {
-      name: "文本准确度",
-      maxScore: 20,
-      score: accuracyScore,
-      comment: accuracyScore >= 16 ? "文本完整度较好。" : "建议再次对照原文细读。"
-    },
-    {
-      name: "吐字归音",
-      maxScore: 20,
-      score: clamp(audioEnergyScore + 1, 8, 20),
-      comment: "个别字词可更清楚，句尾收音还可更利落。"
-    },
-    {
-      name: "停连节奏",
-      maxScore: 20,
-      score: clamp(pacingScore, 8, 20),
-      comment: "节奏整体稳定，但层次还可更鲜明。"
-    },
-    {
-      name: "情感层次",
-      maxScore: 25,
-      score: clamp(emotionBonus + 6, 10, 25),
-      comment: "情感方向明确，转折处可以再拉开一档。"
-    },
-    {
-      name: "整体表现",
-      maxScore: 15,
-      score: clamp(Math.round((audioEnergyScore + pacingScore) / 2), 7, 15),
-      comment: "段落完整，整体完成度不错。"
-    }
-  ];
+  return (
+    accuracyScore +
+    clamp(audioEnergyScore + 1, 8, 20) +
+    clamp(pacingScore, 8, 20) +
+    clamp(emotionBonus + 6, 10, 25) +
+    clamp(Math.round((audioEnergyScore + pacingScore) / 2), 7, 15)
+  );
 }
 
 function sanitizeReport(
-  report: Omit<ScoreReport, "verdict" | "engine">,
+  report: RawScoreReport,
   mode: LevelMode,
   engine: "gemini" | "mock"
 ): ScoreReport {
-  const dimensions = (report.dimensions ?? []).map((item) => ({
-    ...item,
-    score: clamp(Math.round(item.score), 0, Math.round(item.maxScore))
-  }));
   const totalScore =
     report.totalScore != null
       ? clamp(Math.round(report.totalScore), 0, 100)
-      : dimensions.reduce((sum, item) => sum + item.score, 0);
+      : 0;
   const pass = totalScore >= 85;
   const verdict = pass ? "pass" : totalScore >= 70 ? "near_pass" : "retry";
   return {
     totalScore,
     pass,
     mode,
-    summary: report.summary ?? "",
-    dimensions,
-    strengths: normalizeList(report.strengths, 2),
-    improvements: normalizeList(report.improvements, 2),
-    lineFeedback: normalizeFeedback(report.lineFeedback),
-    practiceTip: report.practiceTip ?? "建议再完整朗读一遍，并重点修正点评中提到的高频问题。",
+    summary: normalizeSummary(report.summary),
     transcript: report.transcript,
-    accuracyNotes: report.accuracyNotes,
     verdict,
     engine
   };
 }
 
-function normalizeList(items: string[] | undefined, minItems: number) {
-  const normalized = (items ?? []).map((item) => item.trim()).filter(Boolean);
-  while (normalized.length < minItems) {
-    normalized.push("整体表现有基础，但还需要更有针对性的复练。");
+function normalizeSummary(summary?: string) {
+  const text = (summary ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/[：:]\s*/g, "，")
+    .trim();
+  if (!text) {
+    return "这一遍已经完成，请继续保持整段表达的完整性和稳定度。";
   }
-  return normalized;
-}
 
-function normalizeFeedback(items: TimedFeedbackItem[] | undefined) {
-  const normalized = (items ?? []).filter((item) => item?.label && item?.advice);
-  while (normalized.length < 2) {
-    normalized.push({
-      label: `建议 ${normalized.length + 1}`,
-      advice: "先划出重音和停顿，再做一遍完整朗读。"
-    });
+  const firstSentence =
+    text.split(/(?<=[。！？!?])/u).find((item) => item.trim())?.trim() ?? text;
+  const clipped = Array.from(firstSentence).slice(0, 150).join("").trim();
+  if (/[。！？!?]$/u.test(clipped)) {
+    return clipped;
   }
-  return normalized;
+  return `${clipped}。`;
 }
 
 function normalizeText(text: string) {
